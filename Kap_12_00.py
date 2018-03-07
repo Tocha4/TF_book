@@ -24,7 +24,7 @@ def load_mnist(path, kind='train'):
         
     return images, labels
 
-images, labels = load_mnist(r'Z:\4_Weiterbildung\Python\DeepLearning\TF_book\mnist')
+images, labels = load_mnist(r'..\mnist')
 
 
 #%% batch_generator function
