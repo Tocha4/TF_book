@@ -24,7 +24,7 @@ def load_mnist(path, kind='train'):
         
     return images, labels
 
-images, labels = load_mnist(r'../mnist_data/')
+
 
 
 #%% batch_generator function
@@ -41,3 +41,10 @@ def batch_generator(X,y, batch_size=64, shuffle=False, random_seed=None):
         
     for i in range(0,X.shape[0], batch_size):
         yield (X[i:i+batch_size, :], y[i: i+batch_size])
+        
+        
+if __name__=='__main__':
+    
+    images, labels = load_mnist(r'../mnist/')
+
+    images, labels = load_mnist(r'../mnist/')
