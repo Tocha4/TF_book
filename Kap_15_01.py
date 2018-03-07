@@ -26,7 +26,6 @@ x2 = np.random.rand(*n2)
 ws = [[np.random.rand(*m2) for _ in range(5)] for _ in range(3)]
 y2 = convolve2d(x2, ws[0][0], mode='same')
 
-
 #%% 2D Image convolution (RGB --> 3D)
 
 img = cv2.imread('solu.png')
