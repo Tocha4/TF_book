@@ -3,21 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import os
+import time
 from Kap_12_00 import load_mnist, batch_generator
-
-
-X_data, y_data = load_mnist('../mnist/', kind='train')
-
-X_test, y_test = load_mnist('../mnist/', kind='t10k')
-
-X_train, y_train = X_data[:50000,:], y_data[:50000]
-X_valid, y_valid = X_data[50000:,:], y_data[50000:]
-
-mean_vals = np.mean(X_train, axis=0)
-std_val = np.std(X_train)
-
-X_train_centered = (X_train-mean_vals)/std_val
-X_test_centered = (X_test-mean_vals)/std_val
 
 #%% functions
 def conv_layer(input_tensor, name, kernel_size, n_output_channels, padding_mode='SAME', strides=(1,1,1,1)):
@@ -62,7 +49,7 @@ def fc_layer(input_tensor, name, n_output_units, activation_fn=None):
         print('layer_2:', layer)
         return layer
    
-def build_cnn():
+def build_cnn(learning_rate):
     tf_x = tf.placeholder(tf.float32, shape=[None, 784], name='tf_x')
     # Images come in as flatted array in a batch: Shape=[batch, 784]
     tf_y = tf.placeholder(tf.int32, shape=[None], name='tf_y')    
@@ -95,37 +82,127 @@ def build_cnn():
     predictions = {'probabilities': tf.nn.softmax(h4, name='probabilities'),
                    'labels': tf.cast(tf.argmax(h4, axis=1), dtype=tf.int32, name='labels')}
     
-    
     ## Visualisierung des Graphen mit TensorBoard
     ## Verlustfunktion und Optimierung
     cross_entropy_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=h4, labels=tf_y_onehot),
                                         name='cross_entropy_loss')
     
     # Optimierung:
-    optimizer = tf.train.AdamOptimizer(learning_rate=0.01)
+    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
     optimizer = optimizer.minimize(cross_entropy_loss, name='train_op')
     
     # Berechnung der Korrektklassifizierungsrate
     correct_predictions = tf.equal(predictions['labels'], tf_y, name='correct_preds')
-    accuracy = tf.reduce_mean(tf.cast(correct_predictions, tf.float32), name='accurycy')
+    accuracy = tf.reduce_mean(tf.cast(correct_predictions, tf.float32), name='accuracy')
+    
+def save(saver, sess, epoch, path='../model/'):
+    if not os.path.isdir(path):
+        os.makedirs(path)
+    print('Modell speichern in {}'.format(path))
+    saver.save(sess, os.path.join(path,'cnn-model.ckpt'), global_step=epoch)
+
+def load(saver, sess, path, epoch):
+    print('Modell laden aus {}'.format(path))
+    saver.restore(sess, os.path.join(path, 'cnn-model.ckpt-%d' % epoch))
+
+def train(sess, training_set, validation_set=None, initialize=True, epochs=20, shuffle=True, dropout=0.5, random_seed=None):
+    X_data = np.array(training_set[0])    
+    y_data = np.array(training_set[1])
+    training_loss = []
+    
+    if initialize:
+        sess.run(tf.global_variables_initializer())
+    
+    np.random.seed(random_seed)
+    start = time.time()
+    for epoch in range(1, epochs+1):
+        batch_gen = batch_generator(X_data, y_data, shuffle=shuffle)
+        avg_loss = 0.0
+        
+        for i, (batch_x, batch_y) in enumerate(batch_gen):
+            feed = {'tf_x:0': batch_x,
+                    'tf_y:0': batch_y,
+                    'fc_keep_prob:0': dropout}
+            loss,_ = sess.run(['cross_entropy_loss:0', 'train_op'], feed_dict=feed)
+            avg_loss += loss
+            
+        training_loss.append(avg_loss/(i+1))
+        print('Epoch %02d DWM Training: %7.3f' % (epoch, avg_loss), end=' ')
+        
+        if validation_set is not None:
+            feed = {'tf_x:0': validation_set[0],
+                    'tf_y:0': validation_set[1],
+                    'fc_keep_prob:0': 1.0}
+            valid_acc = sess.run('accuracy:0', feed_dict=feed)
+            print('KKR Validierung: %7.3f ' % valid_acc, end=' ')
+            print('Time: {:.2f}min'.format((time.time()-start)/60))
+        else: print()
+    end = time.time() - start
+    print('It took {:.2f}seconds'.format(end/60))
+    
+def predict(sess, X_test, return_proba=False):
+    feed = {'tf_x:0': X_test,
+            'fc_keep_prob:0': 1.0}
+    if return_proba:
+        return sess.run('probabilities:0', feed_dict=feed)
+    else:
+        return sess.run('labels:0', feed_dict=feed)
     
 if __name__=='__main__':
     
+#%% Data for training
+    X_data, y_data = load_mnist('../mnist/', kind='train')
+
+    X_test, y_test = load_mnist('../mnist/', kind='t10k')
+    
+    X_train, y_train = X_data[:50000,:], y_data[:50000]
+    X_valid, y_valid = X_data[50000:,:], y_data[50000:]
+    
+    mean_vals = np.mean(X_train, axis=0)
+    std_val = np.std(X_train)
+    
+    X_train_centered = (X_train-mean_vals)/std_val
+    X_test_centered = (X_test-mean_vals)/std_val
+    
+#%%  cnn-Model
+    
+    learning_rate = 1e-4
+    random_seed = 123
+    
     g = tf.Graph()
     with g.as_default():
-        y = tf.constant(np.random.rand(1,28,28,3), dtype=tf.float32)
-        x = tf.placeholder(dtype=tf.float32, shape=[None, 28,28,1]) #[batch, width, height, channels (RGB or Grey)]
-        conv_layer(y, name='convtest', kernel_size=(3,3), n_output_channels=32, padding_mode='SAME', strides=(1,1,1,1))
-        fc_layer(y, name='fctest', n_output_units=32, activation_fn=tf.nn.relu)
+        tf.set_random_seed(random_seed)
+        build_cnn(learning_rate)
+        saver = tf.train.Saver()
+
+
         
-        with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
-            a = [i for i in tf.global_variables()][0]
-            b = a.eval()
+#        with tf.Session() as sess:
+#            sess.run(tf.global_variables_initializer())
+#            a = [i for i in tf.global_variables()][0]
+#            b = a.eval()
+#        build_cnn()
     
-    del g,x
+    with tf.Session(graph=g) as sess:
+        train(sess, 
+              training_set=(X_train_centered,y_train),
+              validation_set=(X_valid, y_valid),
+              initialize=True,
+              random_seed=123)
+        save(saver,sess,epoch=20)
 
-
+    del g
+    
+    g2 = tf.Graph()
+    with g2.as_default():
+        build_cnn(learning_rate)
+        saver = tf.train.Saver()
+    
+    with tf.Session(graph=g2) as sess:
+        load(saver, sess, epoch=20, path='../model/')
+        preds = predict(sess, X_test_centered, return_proba=False)
+        print('KKR Test: %.3%%' % (100*np.sum(preds==y_test)/len(y_test)))
+        
 
 
 
